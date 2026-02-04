@@ -35,7 +35,8 @@ async function compose(
 
 export async function up(options: DockerComposeOptions): Promise<void> {
   const detach = options.detach !== false; // default to detached
-  const args = detach ? ['up', '-d'] : ['up'];
+  // Always include --build to ensure images are built/updated when needed
+  const args = detach ? ['up', '-d', '--build'] : ['up', '--build'];
   await compose(args, options);
 }
 
