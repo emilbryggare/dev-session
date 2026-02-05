@@ -18,15 +18,14 @@ export interface SessionRow {
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sessions (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id    TEXT NOT NULL,
+  session_id    TEXT NOT NULL UNIQUE,
   project_root  TEXT NOT NULL,
   session_dir   TEXT NOT NULL,
   branch        TEXT NOT NULL DEFAULT '',
   mode          TEXT NOT NULL DEFAULT 'docker',
   in_place      INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-  destroyed_at  TEXT,
-  UNIQUE(session_id, project_root)
+  destroyed_at  TEXT
 );
 `;
 
@@ -51,6 +50,7 @@ export class SessionStore {
     this.db = new Database(path);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('busy_timeout = 3000');
+    this.migrate();
     this.db.exec(SCHEMA);
   }
 
@@ -122,10 +122,10 @@ export class SessionStore {
       .get(sessionDir) as SessionRow | undefined;
   }
 
-  getUsedSessionIds(projectRoot: string): Set<string> {
+  getUsedSessionIds(): Set<string> {
     const rows = this.db
-      .prepare('SELECT session_id FROM sessions WHERE project_root = ? AND destroyed_at IS NULL')
-      .all(projectRoot) as Array<{ session_id: string }>;
+      .prepare('SELECT session_id FROM sessions WHERE destroyed_at IS NULL')
+      .all() as Array<{ session_id: string }>;
     return new Set(rows.map((r) => r.session_id));
   }
 
@@ -145,5 +145,39 @@ export class SessionStore {
 
   close(): void {
     this.db.close();
+  }
+
+  private migrate(): void {
+    const version = this.db.pragma('user_version', { simple: true }) as number;
+
+    if (version < 1) {
+      // Check if old table exists (with composite UNIQUE(session_id, project_root))
+      const tableExists = this.db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
+        .get();
+
+      if (tableExists) {
+        this.db.exec(`
+          CREATE TABLE sessions_new (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id    TEXT NOT NULL UNIQUE,
+            project_root  TEXT NOT NULL,
+            session_dir   TEXT NOT NULL,
+            branch        TEXT NOT NULL DEFAULT '',
+            mode          TEXT NOT NULL DEFAULT 'docker',
+            in_place      INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            destroyed_at  TEXT
+          );
+          INSERT OR IGNORE INTO sessions_new (id, session_id, project_root, session_dir, branch, mode, in_place, created_at, destroyed_at)
+            SELECT id, session_id, project_root, session_dir, branch, mode, in_place, created_at, destroyed_at
+            FROM sessions;
+          DROP TABLE sessions;
+          ALTER TABLE sessions_new RENAME TO sessions;
+        `);
+      }
+
+      this.db.pragma('user_version = 1');
+    }
   }
 }

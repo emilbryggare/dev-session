@@ -45,7 +45,7 @@ export async function createSession(
 
   // Auto-assign session ID if not provided
   if (!sessionId) {
-    sessionId = findNextSessionId(store.getUsedSessionIds(projectRoot));
+    sessionId = findNextSessionId(store.getUsedSessionIds());
     console.log(chalk.gray(`Auto-assigned session ID: ${sessionId}`));
   }
 
