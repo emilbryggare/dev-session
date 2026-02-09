@@ -59,26 +59,23 @@ const withEnvCmd = program
   .passThroughOptions()
   .allowUnknownOption()
   .action(async (app, options, cmd) => {
-    // Everything after -- becomes the command to run
-    const args = cmd.args;
-
-    // If app is provided but looks like the start of the command (no matching app),
-    // it might be the command itself. The separator is --.
-    // Commander puts everything after -- into cmd.args.
+    // cmd.args includes [app] as its first element when set — strip it.
+    const rawArgs = app ? cmd.args.slice(1) : cmd.args;
 
     let appName;
     let command;
 
-    if (app && args.length > 0) {
-      // app is provided and there are args after --
+    const dashIdx = rawArgs.indexOf('--');
+    if (dashIdx !== -1) {
+      // dev-prism with-env my-app -- echo hello
       appName = app;
-      command = args;
-    } else if (app && args.length === 0) {
-      // No --, treat app as the first part of the command
-      // This handles: dev-prism with-env echo hello
-      command = [app];
+      command = rawArgs.slice(dashIdx + 1);
+    } else if (app) {
+      // No --, treat app as start of command (not an app name)
+      // dev-prism with-env echo hello world
+      command = [app, ...rawArgs];
     } else {
-      command = args;
+      command = rawArgs;
     }
 
     await withEnv(command, appName);
